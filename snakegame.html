@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pastel Snake — Emoji Fruit Edition</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg: #FFF8F5;
+    --card: #F6EEF3;
+    --accent: #F2C1C1;
+    --accent-2: #D8E8E6;
+    --muted: #9A8F8A;
+    --text: #2D2A26;
+    --grid: #EADBD7;
+  }
+
+  body{
+    margin:0;
+    font-family:"Archivo",sans-serif;
+    background:linear-gradient(180deg,var(--bg),#FFFDFB);
+  }
+
+  .wrap{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:26px;
+  }
+
+  .card{
+    width:900px;
+    max-width:100%;
+    background:var(--card);
+    border-radius:20px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.07);
+    padding:20px;
+    display:grid;
+    grid-template-columns:1fr 280px;
+    gap:20px;
+  }
+
+  @media(max-width:900px){
+    .card{grid-template-columns:1fr;}
+  }
+
+  h1{
+    text-align:center;
+    margin:0;
+    font-size:28px;
+  }
+  .sub{text-align:center;color:var(--muted);margin:6px 0 16px;}
+
+  canvas{
+    width:100%;
+    max-width:560px;
+    image-rendering:pixelated;
+    border-radius:12px;
+    background:#fff;
+    box-shadow:inset 0 -12px 32px rgba(216,232,230,0.25);
+  }
+
+  .btn{
+    background:var(--accent);
+    border:none;
+    padding:8px 14px;
+    border-radius:9px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  .controls{display:flex;gap:8px;justify-content:center;margin-top:10px;}
+
+  .panel{
+    background:rgba(255,255,255,0.6);
+    border-radius:12px;
+    padding:14px;
+    font-size:14px;
+  }
+
+  .stat-row{display:flex;justify-content:space-between;margin-bottom:10px;}
+  .stat-row strong{font-size:20px;color:var(--text);}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+<div class="card">
+
+  <div>
+    <h1>Pastel Snake</h1>
+    <p class="sub">Emoji fruit 🍓 — if it moves before you eat it, you restart.</p>
+
+    <canvas id="game" width="560" height="560"></canvas>
+
+    <div class="controls">
+      <button id="start" class="btn">Start</button>
+      <button id="pause" class="btn">Pause</button>
+      <button id="reset" class="btn">Reset</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="stat-row"><span>Score</span> <strong id="score">0</strong></div>
+    <div class="stat-row"><span>High Score</span> <strong id="high">0</strong></div>
+
+    <label>Grid Size</label>
+    <input id="grid" type="range" min="12" max="40" value="20" />
+
+    <br><br>
+
+    <label>Fruit Move Interval (ms)</label>
+    <input id="fruitInt" type="range" min="2000" max="7000" value="4000" />
+  </div>
+
+</div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const FRUIT_EMOJI = "🍓"; // ← Change fruit emoji here!
+let gridSize = 20;
+let cellSize = canvas.width / gridSize;
+
+let snake, direction, pending, fruit, score, running, paused;
+
+let FRUIT_INTERVAL = 4000; // stays *constant* now
+let fruitTimer;
+let tick = 120;
+let gameLoop;
+
+const scoreEl = document.getElementById("score");
+const highEl = document.getElementById("high");
+
+highEl.textContent = localStorage.getItem("emojiSnakeHigh") || 0;
+
+function resetGame(){
+  gridSize = Number(document.getElementById("grid").value);
+  FRUIT_INTERVAL = Number(document.getElementById("fruitInt").value);
+  cellSize = canvas.width / gridSize;
+
+  snake = [{x:Math.floor(gridSize/2),y:Math.floor(gridSize/2)}];
+  direction = {x:1,y:0};
+  pending = null;
+  score = 0;
+  scoreEl.textContent = score;
+  
+  fruit = randomFruit();
+}
+
+function randomFruit(){
+  let open = [];
+  for(let x=0;x<gridSize;x++){
+    for(let y=0;y<gridSize;y++){
+      if(!snake.some(s=>s.x===x && s.y===y)){
+        open.push({x,y});
+      }
+    }
+  }
+  return open[Math.floor(Math.random()*open.length)];
+}
+
+function startFruitTimer(){
+  clearInterval(fruitTimer);
+  fruitTimer = setInterval(()=>{
+    // fruit moved → you lose
+    gameOver();
+  }, FRUIT_INTERVAL);
+}
+
+function gameOver(){
+  clearInterval(gameLoop);
+  clearInterval(fruitTimer);
+
+  if(score > Number(localStorage.getItem("emojiSnakeHigh")||0)){
+    localStorage.setItem("emojiSnakeHigh", score);
+    highEl.textContent = score;
+  }
+
+  setTimeout(()=>{ resetGame(); draw(); }, 500);
+  running = false;
+}
+
+function startGame(){
+  resetGame();
+  running = true;
+  paused = false;
+
+  startFruitTimer();
+
+  gameLoop = setInterval(tickLoop, tick);
+}
+
+function tickLoop(){
+  if(paused) return;
+
+  if(pending){
+    if(!(pending.x === -direction.x && pending.y === -direction.y)){
+      direction = pending;
+    }
+    pending = null;
+  }
+
+  let head = {x:snake[0].x + direction.x, y:snake[0].y + direction.y};
+
+  // wrap
+  if(head.x < 0) head.x = gridSize-1;
+  if(head.x >= gridSize) head.x = 0;
+  if(head.y < 0) head.y = gridSize-1;
+  if(head.y >= gridSize) head.y = 0;
+
+  // self hit
+  if(snake.some(s=>s.x===head.x && s.y===head.y)){
+    return gameOver();
+  }
+
+  snake.unshift(head);
+
+  // fruit eaten
+  if(head.x === fruit.x && head.y === fruit.y){
+    score++;
+    scoreEl.textContent = score;
+    fruit = randomFruit();
+    startFruitTimer();
+  } else {
+    snake.pop();
+  }
+
+  draw();
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // grid
+  ctx.strokeStyle = "#EADBD7";
+  for(let i=0;i<=gridSize;i++){
+    let p = i * cellSize;
+    ctx.beginPath();
+    ctx.moveTo(p,0); ctx.lineTo(p,canvas.height); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0,p); ctx.lineTo(canvas.width,p); ctx.stroke();
+  }
+
+  // snake
+  ctx.fillStyle = "#D8E8E6";
+  snake.forEach((s,i)=>{
+    let x = s.x*cellSize, y = s.y*cellSize;
+    ctx.fillRect(x+1,y+1,cellSize-2,cellSize-2);
+  });
+
+  // fruit (emoji)
+  ctx.font = (cellSize*0.9) + "px serif";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.fillText(FRUIT_EMOJI, fruit.x*cellSize + cellSize/2, fruit.y*cellSize + cellSize/2);
+}
+
+window.addEventListener("keydown", (e)=>{
+  if(!running) return;
+
+  if(["w","ArrowUp"].includes(e.key)) pending={x:0,y:-1};
+  if(["s","ArrowDown"].includes(e.key)) pending={x:0,y:1};
+  if(["a","ArrowLeft"].includes(e.key)) pending={x:-1,y:0};
+  if(["d","ArrowRight"].includes(e.key)) pending={x:1,y:0};
+});
+
+document.getElementById("start").onclick = ()=> startGame();
+document.getElementById("pause").onclick = ()=> paused = !paused;
+document.getElementById("reset").onclick = ()=>{ resetGame(); draw(); };
+
+resetGame();
+draw();
+</script>
+</body>
+</html>
