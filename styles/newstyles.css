@@ -1,0 +1,22 @@
+body{
+    background-color: lightblue;
+}
+h1{
+text-align: center;
+color: black;
+font-family:Arial, Helvetica, sans-serif;
+size: 72px;
+}
+
+h2{
+    color: mediumblue;
+    text-decoration: underline;
+    text-align: center;
+}
+p{
+    color:black
+}
+h3{
+    color: darkred;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
